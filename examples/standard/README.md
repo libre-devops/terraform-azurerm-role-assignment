@@ -22,13 +22,13 @@ module "role_assignments" {
   assignments = [
     {
       role_definition_name = "Reader"
-      scope = module.rg.rg_id
-      principal_id = azurerm_user_assigned_identity.uaid.principal_id
+      scope                = module.rg.rg_id
+      principal_id         = azurerm_user_assigned_identity.uaid.principal_id
     },
     {
       role_definition_id = "b24988ac-6180-42a0-ab88-20f7382dd24c" # Contributor
-      scope = format("/subscriptions/%s", data.azurerm_client_config.current.subscription_id)
-      principal_id = azurerm_user_assigned_identity.uaid.principal_id
+      scope              = format("/subscriptions/%s", data.azurerm_client_config.current.subscription_id)
+      principal_id       = azurerm_user_assigned_identity.uaid.principal_id
     },
   ]
 }
