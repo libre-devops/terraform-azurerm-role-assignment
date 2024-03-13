@@ -1,7 +1,6 @@
-
 ```hcl
 resource "azurerm_role_assignment" "this" {
-  for_each = { for idx, assignment in var.assignments : tostring(idx) => assignment }
+  for_each                               = { for idx, assignment in var.assignments : tostring(idx) => assignment }
   name                                   = try(each.value.name, null)
   scope                                  = each.value.scope
   role_definition_id                     = lookup(each.value, "role_definition_id", null) != null ? data.azurerm_role_definition.by_id[each.key].id : null
@@ -17,13 +16,13 @@ resource "azurerm_role_assignment" "this" {
 
 data "azurerm_role_definition" "by_name" {
   for_each = { for idx, assignment in var.assignments : tostring(idx) => assignment if lookup(assignment, "role_definition_name", null) != null }
-  name  = each.value.role_definition_name
-  scope = each.value.scope
+  name     = each.value.role_definition_name
+  scope    = each.value.scope
 }
 
 
 data "azurerm_role_definition" "by_id" {
-  for_each = { for idx, assignment in var.assignments : tostring(idx) => assignment if lookup(assignment, "role_definition_id", null) != null }
+  for_each           = { for idx, assignment in var.assignments : tostring(idx) => assignment if lookup(assignment, "role_definition_id", null) != null }
   role_definition_id = each.value.role_definition_id
   scope              = each.value.scope
 }
@@ -36,7 +35,7 @@ No requirements.
 
 | Name | Version |
 |------|---------|
-| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | 3.74.0 |
+| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | n/a |
 
 ## Modules
 

@@ -15,7 +15,7 @@ resource "azurerm_user_assigned_identity" "uaid" {
 }
 
 module "role_assignments" {
-  source = "cyber-scot/role-assignment/azurerm"
+  source = "../../"
 
   assignments = [
     {
