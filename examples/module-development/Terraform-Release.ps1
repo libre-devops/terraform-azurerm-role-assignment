@@ -133,7 +133,7 @@ function Update-ReadmeWithTerraformDocs {
     try {
         $terraformDocsPath = Get-Command terraform-docs -ErrorAction Stop
         Write-Host "Success: Terraform-docs found at: $($terraformDocsPath.Source)" -ForegroundColor Green
-        }
+    }
     catch {
         Write-Error "Error: Terraform-docs is not installed or not in PATH, Skipping README generation."
     }

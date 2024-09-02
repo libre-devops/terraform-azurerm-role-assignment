@@ -1,27 +1,12 @@
-resource "azurerm_role_assignment" "this" {
-  for_each                               = { for idx, assignment in var.assignments : tostring(idx) => assignment }
-  name                                   = try(each.value.name, null)
-  scope                                  = each.value.scope
-  role_definition_id                     = lookup(each.value, "role_definition_id", null) != null ? data.azurerm_role_definition.by_id[each.key].id : null
-  role_definition_name                   = lookup(each.value, "role_definition_name", null) != null ? data.azurerm_role_definition.by_name[each.key].name : null
-  principal_id                           = each.value.principal_id
-  condition                              = lookup(each.value, "condition", null)
-  condition_version                      = lookup(each.value, "condition_version", null)
-  delegated_managed_identity_resource_id = lookup(each.value, "delegated_managed_identity_resource_id", null)
-  description                            = lookup(each.value, "description", null)
-  skip_service_principal_aad_check       = lookup(each.value, "skip_service_principal_aad_check", false)
-}
+resource "azurerm_role_assignment" "principal_ids_assignment" {
+  count = length(local.role_principal_id_combinations)
 
-
-data "azurerm_role_definition" "by_name" {
-  for_each = { for idx, assignment in var.assignments : tostring(idx) => assignment if lookup(assignment, "role_definition_name", null) != null }
-  name     = each.value.role_definition_name
-  scope    = each.value.scope
-}
-
-
-data "azurerm_role_definition" "by_id" {
-  for_each           = { for idx, assignment in var.assignments : tostring(idx) => assignment if lookup(assignment, "role_definition_id", null) != null }
-  role_definition_id = each.value.role_definition_id
-  scope              = each.value.scope
+  scope                                  = local.role_principal_id_combinations[count.index].scope
+  principal_id                           = local.role_principal_id_combinations[count.index].principal_id
+  role_definition_name                   = local.role_principal_id_combinations[count.index].role_name
+  condition                              = local.role_principal_id_combinations[count.index].condition
+  condition_version                      = local.role_principal_id_combinations[count.index].condition != null ? "2.0" : null
+  delegated_managed_identity_resource_id = local.role_principal_id_combinations[count.index].delegated_managed_identity_resource_id
+  description                            = local.role_principal_id_combinations[count.index].description
+  skip_service_principal_aad_check       = local.role_principal_id_combinations[count.index].skip_service_principal_aad_check
 }
