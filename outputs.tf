@@ -1,54 +1,59 @@
-output "conditions_applied" {
-  description = "A list of conditions applied to the role assignments."
-  value = [
-    for ra in azurerm_role_assignment.principal_ids_assignment :
-    {
-      principal_id         = ra.principal_id
-      role_definition_name = ra.role_definition_name
-      scope                = ra.scope
-      condition            = ra.condition
-      condition_version    = ra.condition_version
-    } if ra.condition != null
-  ]
+output "role_assignments" {
+  description = "The permanent (azurerm_role_assignment) assignments, keyed by \"label|rN|pN\". Full resource objects (all attributes)."
+  value       = azurerm_role_assignment.this
+}
+
+output "pim_active_role_assignments" {
+  description = "The PIM active assignments, keyed by \"label|rN|pN\". Full resource objects."
+  value       = azurerm_pim_active_role_assignment.this
+}
+
+output "pim_eligible_role_assignments" {
+  description = "The PIM eligible assignments, keyed by \"label|rN|pN\". Full resource objects."
+  value       = azurerm_pim_eligible_role_assignment.this
+}
+
+output "role_assignment_ids" {
+  description = "All assignment ids across the three types, keyed by \"label|rN|pN\"."
+  value = merge(
+    { for k, r in azurerm_role_assignment.this : k => r.id },
+    { for k, r in azurerm_pim_active_role_assignment.this : k => r.id },
+    { for k, r in azurerm_pim_eligible_role_assignment.this : k => r.id },
+  )
+}
+
+output "role_assignment_ids_zipmap" {
+  description = "key => { name, id } across all assignment types, for easy composition with other modules."
+  value = merge(
+    { for k, r in azurerm_role_assignment.this : k => { name = k, id = r.id } },
+    { for k, r in azurerm_pim_active_role_assignment.this : k => { name = k, id = r.id } },
+    { for k, r in azurerm_pim_eligible_role_assignment.this : k => { name = k, id = r.id } },
+  )
 }
 
 output "principal_ids" {
-  description = "A list of all principal IDs to which roles were assigned."
-  value = [
-    for ra in azurerm_role_assignment.principal_ids_assignment :
-    ra.principal_id
-  ]
-}
-
-output "role_assignments" {
-  description = "A list of all role assignments created by this module."
-  value = [
-    for ra in azurerm_role_assignment.principal_ids_assignment :
-    {
-      principal_id                           = ra.principal_id
-      role_definition_name                   = ra.role_definition_name
-      scope                                  = ra.scope
-      condition                              = ra.condition
-      condition_version                      = ra.condition_version
-      delegated_managed_identity_resource_id = ra.delegated_managed_identity_resource_id
-      description                            = ra.description
-      skip_service_principal_aad_check       = ra.skip_service_principal_aad_check
-    }
-  ]
-}
-
-output "role_names" {
-  description = "A list of all role names assigned."
-  value = [
-    for ra in azurerm_role_assignment.principal_ids_assignment :
-    ra.role_definition_name
-  ]
+  description = "The distinct principal ids that received an assignment."
+  value       = distinct([for c in local.combinations : c.principal_id])
 }
 
 output "scopes" {
-  description = "A list of all scopes where roles were assigned."
-  value = [
-    for ra in azurerm_role_assignment.principal_ids_assignment :
-    ra.scope
-  ]
+  description = "The distinct scopes assignments were created at."
+  value       = distinct([for c in local.combinations : c.scope])
+}
+
+output "guarded_assignments" {
+  description = "The keys of assignments that received the privileged-delegation deny condition."
+  value       = [for k, applied in local.guard_applied : k if applied]
+}
+
+output "conditions_applied" {
+  description = "The permanent assignments that carry an ABAC condition, with their principal, role, scope, and condition version."
+  value = {
+    for k, r in azurerm_role_assignment.this : k => {
+      principal_id      = r.principal_id
+      role              = coalesce(r.role_definition_name, r.role_definition_id)
+      scope             = r.scope
+      condition_version = r.condition_version
+    } if r.condition != null
+  }
 }
