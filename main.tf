@@ -10,6 +10,26 @@ data "azurerm_role_definition" "pim" {
   scope = local.pim_lookup_scope
 }
 
+# Custom Azure RBAC role definitions, keyed by role name. assignable_scopes defaults to the
+# definition's own scope. Assignments below reference these through role_definition_keys.
+resource "azurerm_role_definition" "this" {
+  for_each = var.role_definitions
+
+  name               = each.key
+  scope              = each.value.scope
+  description        = each.value.description
+  role_definition_id = each.value.role_definition_id
+
+  permissions {
+    actions          = each.value.permissions.actions
+    not_actions      = each.value.permissions.not_actions
+    data_actions     = each.value.permissions.data_actions
+    not_data_actions = each.value.permissions.not_data_actions
+  }
+
+  assignable_scopes = length(each.value.assignable_scopes) > 0 ? each.value.assignable_scopes : [each.value.scope]
+}
+
 # Standard, always-active RBAC assignments. Privileged roles receive the delegation-deny condition by
 # default (see locals.privileged_deny_condition and var.constrained_delegation_role_ids).
 resource "azurerm_role_assignment" "this" {
@@ -19,7 +39,7 @@ resource "azurerm_role_assignment" "this" {
   principal_id         = each.value.principal_id
   principal_type       = each.value.principal_type
   role_definition_name = each.value.role_name
-  role_definition_id   = each.value.role_id
+  role_definition_id   = local.effective_role_id[each.key]
   name                 = local.effective_name[each.key]
   description          = each.value.description
   condition            = local.effective_condition[each.key]

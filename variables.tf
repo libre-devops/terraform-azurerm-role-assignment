@@ -1,3 +1,36 @@
+variable "constrained_delegation_role_ids" {
+  description = <<DESC
+The privileged role definition ids (name => GUID) whose re-delegation is denied by the ABAC condition
+this module applies to privileged assignments. Defaults to the three roles that can grant Azure RBAC
+(Owner, User Access Administrator, Role Based Access Control Administrator). Extend this to treat more
+roles as privileged. The guard denies the assignee the ability to create or delete role assignments for
+any of these roles, so a granted Owner cannot hand Owner (or the other listed roles) to anyone else.
+DESC
+
+  type = map(string)
+  default = {
+    "Owner"                                   = "8e3af657-a8ff-443c-a75c-2fe8c4bcb635"
+    "User Access Administrator"               = "18d7d88d-d35e-4fb5-a5c3-7773c20a72d9"
+    "Role Based Access Control Administrator" = "f58310d9-a9f6-439a-9e8d-f62e7b41a168"
+  }
+
+  validation {
+    condition     = alltrue([for g in values(var.constrained_delegation_role_ids) : can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", g))])
+    error_message = "Each constrained_delegation_role_ids value must be a role definition GUID."
+  }
+}
+
+variable "pim_role_definition_lookup_scope" {
+  description = <<DESC
+The scope at which PIM `role_names` are resolved to role definition ids (built-in roles resolve at any
+scope). Defaults to the current subscription. Set this when a PIM assignment uses a custom role defined
+at a different scope, or pass the full role definition id via `role_ids` instead.
+DESC
+
+  type    = string
+  default = null
+}
+
 variable "role_assignments" {
   description = <<DESC
 The role assignments to create, keyed by a logical label you choose (the label is only for readable
@@ -12,16 +45,19 @@ can assign several roles to several principals at one scope.
 - `pim_eligible`: a PIM eligible assignment (the principal can activate the role just-in-time).
 
 `role_names` are resolved to a role definition id automatically for the PIM types (which require the
-id, not the name); `role_ids` (full role definition resource ids) are used as-is. The privileged
-delegation guard (see `constrained_delegation_role_ids`) only applies to `permanent` and `pim_eligible`
-assignments, because `pim_active` has no condition argument.
+id, not the name); `role_ids` (full role definition resource ids) are used as-is; and
+`role_definition_keys` reference custom roles created in this call via `role_definitions`, so
+define-then-assign works in one module call. The privileged delegation guard (see
+`constrained_delegation_role_ids`) only applies to `permanent` and `pim_eligible` assignments, because
+`pim_active` has no condition argument.
 DESC
 
   type = map(object({
-    scope         = string
-    principal_ids = optional(list(string), [])
-    role_names    = optional(list(string), [])
-    role_ids      = optional(list(string), [])
+    scope                = string
+    principal_ids        = optional(list(string), [])
+    role_names           = optional(list(string), [])
+    role_ids             = optional(list(string), [])
+    role_definition_keys = optional(list(string), [])
 
     assignment_type = optional(string, "permanent")
     principal_type  = optional(string)
@@ -71,40 +107,60 @@ DESC
   }
 
   validation {
-    condition     = alltrue([for e in values(var.role_assignments) : length(e.role_names) + length(e.role_ids) > 0])
-    error_message = "Every role_assignments entry must set at least one of role_names or role_ids."
-  }
-}
-
-variable "constrained_delegation_role_ids" {
-  description = <<DESC
-The privileged role definition ids (name => GUID) whose re-delegation is denied by the ABAC condition
-this module applies to privileged assignments. Defaults to the three roles that can grant Azure RBAC
-(Owner, User Access Administrator, Role Based Access Control Administrator). Extend this to treat more
-roles as privileged. The guard denies the assignee the ability to create or delete role assignments for
-any of these roles, so a granted Owner cannot hand Owner (or the other listed roles) to anyone else.
-DESC
-
-  type = map(string)
-  default = {
-    "Owner"                                   = "8e3af657-a8ff-443c-a75c-2fe8c4bcb635"
-    "User Access Administrator"               = "18d7d88d-d35e-4fb5-a5c3-7773c20a72d9"
-    "Role Based Access Control Administrator" = "f58310d9-a9f6-439a-9e8d-f62e7b41a168"
+    condition     = alltrue([for e in values(var.role_assignments) : length(e.role_names) + length(e.role_ids) + length(e.role_definition_keys) > 0])
+    error_message = "Every role_assignments entry must set at least one of role_names, role_ids, or role_definition_keys."
   }
 
   validation {
-    condition     = alltrue([for g in values(var.constrained_delegation_role_ids) : can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", g))])
-    error_message = "Each constrained_delegation_role_ids value must be a role definition GUID."
+    condition     = alltrue([for e in values(var.role_assignments) : alltrue([for d in e.role_definition_keys : contains(keys(var.role_definitions), d)])])
+    error_message = "One or more role_assignments entries reference a role_definition_keys entry that is not in role_definitions."
   }
 }
 
-variable "pim_role_definition_lookup_scope" {
+variable "role_definitions" {
   description = <<DESC
-The scope at which PIM `role_names` are resolved to role definition ids (built-in roles resolve at any
-scope). Defaults to the current subscription. Set this when a PIM assignment uses a custom role defined
-at a different scope, or pass the full role definition id via `role_ids` instead.
+Custom Azure RBAC role definitions to create, keyed by role name (custom role names are unique per
+tenant, so make them distinctive). `scope` is where the definition is stored (a management group,
+subscription, or resource group id); `assignable_scopes` defaults to just that scope when empty.
+`permissions` holds the control-plane `actions`/`not_actions` and data-plane
+`data_actions`/`not_data_actions`. Assignments in the same call reference a definition through
+`role_definition_keys`. Creating a definition needs `Microsoft.Authorization/roleDefinitions/write`
+on the scope (Owner; User Access Administrator is NOT enough). A freshly created definition can take
+a short while to become assignable (Azure RBAC replication), so a first apply may need a retry when
+the definition and a same-call assignment race.
 DESC
 
-  type    = string
-  default = null
+  type = map(object({
+    scope              = string
+    description        = optional(string)
+    assignable_scopes  = optional(list(string), [])
+    role_definition_id = optional(string)
+    permissions = object({
+      actions          = optional(list(string), [])
+      not_actions      = optional(list(string), [])
+      data_actions     = optional(list(string), [])
+      not_data_actions = optional(list(string), [])
+    })
+  }))
+  default = {}
+
+  validation {
+    condition     = alltrue([for d in values(var.role_definitions) : can(regex("^(/subscriptions/|/providers/Microsoft\\.Management/managementGroups/)", d.scope))])
+    error_message = "Each role definition scope must be a management group, subscription, or resource group resource id."
+  }
+
+  validation {
+    condition     = alltrue([for d in values(var.role_definitions) : alltrue([for s in d.assignable_scopes : can(regex("^(/subscriptions/|/providers/Microsoft\\.Management/managementGroups/)", s))])])
+    error_message = "Each assignable_scopes entry must be a management group, subscription, or resource group resource id."
+  }
+
+  validation {
+    condition     = alltrue([for d in values(var.role_definitions) : length(d.permissions.actions) + length(d.permissions.data_actions) > 0])
+    error_message = "Each role definition must grant at least one action or data action (not_actions only subtract)."
+  }
+
+  validation {
+    condition     = alltrue([for d in values(var.role_definitions) : d.role_definition_id == null ? true : can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", d.role_definition_id))])
+    error_message = "role_definition_id, when set, must be a GUID (it pins the definition's id; changing it forces a new definition)."
+  }
 }

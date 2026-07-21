@@ -33,3 +33,12 @@ check "name_only_on_single_expansion" {
     error_message = "These permanent entries set name but expand to more than one assignment, so name is ignored (names must be unique): ${join(", ", [for label, e in var.role_assignments : label if e.assignment_type == "permanent" && e.name != null && (length(e.role_names) + length(e.role_ids)) * length(e.principal_ids) > 1])}."
   }
 }
+
+# A custom role granting the control-plane wildcard action is an Owner-equivalent under a different
+# name, which defeats the point of a scoped custom role and evades reviews that look for Owner.
+check "custom_roles_avoid_wildcard_actions" {
+  assert {
+    condition     = alltrue([for d in values(var.role_definitions) : !contains(d.permissions.actions, "*")])
+    error_message = "These role_definitions grant the wildcard action * (an Owner-equivalent); prefer explicit actions: ${join(", ", [for name, d in var.role_definitions : name if contains(d.permissions.actions, "*")])}."
+  }
+}

@@ -36,8 +36,9 @@ EOT
   combinations = flatten([
     for label, e in var.role_assignments : [
       for ri, role in concat(
-        [for n in e.role_names : { name = n, id = null }],
-        [for i in e.role_ids : { name = null, id = i }],
+        [for n in e.role_names : { name = n, id = null, def_key = null }],
+        [for i in e.role_ids : { name = null, id = i, def_key = null }],
+        [for d in e.role_definition_keys : { name = null, id = null, def_key = d }],
         ) : [
         for pi, pid in e.principal_ids : {
           key             = "${label}|r${ri}|p${pi}"
@@ -47,6 +48,7 @@ EOT
           principal_type  = e.principal_type
           role_name       = role.name
           role_id         = role.id
+          role_def_key    = role.def_key
           assignment_type = e.assignment_type
           description     = e.description
 
@@ -63,7 +65,7 @@ EOT
 
           # Known at plan (list lengths): a passthrough name is only applied to a single-assignment
           # entry, since Azure role assignment names must be unique.
-          entry_expansion = (length(e.role_names) + length(e.role_ids)) * length(e.principal_ids)
+          entry_expansion = (length(e.role_names) + length(e.role_ids) + length(e.role_definition_keys)) * length(e.principal_ids)
         }
       ]
     ]
@@ -111,8 +113,15 @@ EOT
     for k, c in local.permanent : k => c.entry_expansion == 1 ? c.name : null
   }
 
-  # PIM resources require the full role definition id. role_ids are used as-is; role_names are resolved
-  # via the data source. Names are known at plan, so the data source for_each key set stays valid.
+  # A permanent assignment takes either a role name or a role definition id; combinations that
+  # reference an in-call custom role (role_def_key) resolve to that definition's resource id.
+  effective_role_id = {
+    for k, c in local.permanent : k => c.role_def_key != null ? azurerm_role_definition.this[c.role_def_key].role_definition_resource_id : c.role_id
+  }
+
+  # PIM resources require the full role definition id. role_ids are used as-is; in-call custom roles
+  # resolve to their definition's resource id; role_names are resolved via the data source. Names are
+  # known at plan, so the data source for_each key set stays valid.
   pim_role_names = toset([
     for c in local.combinations : c.role_name
     if contains(["pim_active", "pim_eligible"], c.assignment_type) && c.role_name != null
@@ -120,7 +129,9 @@ EOT
   pim_lookup_scope = coalesce(var.pim_role_definition_lookup_scope, data.azurerm_subscription.current.id)
 
   pim_role_definition_id = {
-    for k, c in local.by_key : k => c.role_id != null ? c.role_id : data.azurerm_role_definition.pim[c.role_name].id
+    for k, c in local.by_key : k => c.role_def_key != null ? azurerm_role_definition.this[c.role_def_key].role_definition_resource_id : (
+      c.role_id != null ? c.role_id : data.azurerm_role_definition.pim[c.role_name].id
+    )
     if contains(["pim_active", "pim_eligible"], c.assignment_type)
   }
 }

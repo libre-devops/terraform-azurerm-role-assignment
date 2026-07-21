@@ -159,3 +159,133 @@ run "pim_eligible_guarded" {
     error_message = "A privileged eligible role should carry the delegation guard condition."
   }
 }
+
+run "creates_custom_role_definition_with_defaults" {
+  command = plan
+
+  variables {
+    role_definitions = {
+      "Tag Reader (test)" = {
+        scope = "/subscriptions/00000000-0000-0000-0000-000000000000"
+        permissions = {
+          actions = ["Microsoft.Resources/subscriptions/resourceGroups/read"]
+        }
+      }
+    }
+  }
+
+  assert {
+    condition     = azurerm_role_definition.this["Tag Reader (test)"].name == "Tag Reader (test)"
+    error_message = "The custom role name should come from the map key."
+  }
+
+  assert {
+    condition     = azurerm_role_definition.this["Tag Reader (test)"].assignable_scopes == tolist(["/subscriptions/00000000-0000-0000-0000-000000000000"])
+    error_message = "assignable_scopes should default to the definition's own scope."
+  }
+}
+
+run "assigns_custom_role_by_definition_key" {
+  command = plan
+
+  variables {
+    role_definitions = {
+      "Tag Reader (test)" = {
+        scope = "/subscriptions/00000000-0000-0000-0000-000000000000"
+        permissions = {
+          actions = ["Microsoft.Resources/subscriptions/resourceGroups/read"]
+        }
+      }
+    }
+    role_assignments = {
+      custom = {
+        scope                = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ldo-uks-tst-001"
+        principal_ids        = ["11111111-1111-1111-1111-111111111111"]
+        role_definition_keys = ["Tag Reader (test)"]
+      }
+      custom_pim = {
+        scope                = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ldo-uks-tst-001"
+        principal_ids        = ["11111111-1111-1111-1111-111111111111"]
+        role_definition_keys = ["Tag Reader (test)"]
+        assignment_type      = "pim_eligible"
+      }
+    }
+  }
+
+  assert {
+    condition     = length(azurerm_role_assignment.this) == 1 && length(azurerm_pim_eligible_role_assignment.this) == 1
+    error_message = "role_definition_keys should expand to both permanent and PIM assignments."
+  }
+
+  assert {
+    condition     = length(azurerm_role_definition.this) == 1
+    error_message = "The referenced custom role definition should be created."
+  }
+}
+
+run "rejects_unknown_role_definition_key" {
+  command = plan
+
+  variables {
+    role_assignments = {
+      bad = {
+        scope                = "/subscriptions/00000000-0000-0000-0000-000000000000"
+        principal_ids        = ["11111111-1111-1111-1111-111111111111"]
+        role_definition_keys = ["Does Not Exist"]
+      }
+    }
+  }
+
+  expect_failures = [var.role_assignments]
+}
+
+run "rejects_role_definition_without_grants" {
+  command = plan
+
+  variables {
+    role_definitions = {
+      "Empty Role" = {
+        scope = "/subscriptions/00000000-0000-0000-0000-000000000000"
+        permissions = {
+          not_actions = ["Microsoft.Authorization/*/write"]
+        }
+      }
+    }
+  }
+
+  expect_failures = [var.role_definitions]
+}
+
+run "rejects_role_definition_with_bad_scope" {
+  command = plan
+
+  variables {
+    role_definitions = {
+      "Bad Scope" = {
+        scope = "sub-id"
+        permissions = {
+          actions = ["Microsoft.Resources/subscriptions/resourceGroups/read"]
+        }
+      }
+    }
+  }
+
+  expect_failures = [var.role_definitions]
+}
+
+run "warns_on_wildcard_custom_role" {
+  command = plan
+
+  variables {
+    role_definitions = {
+      "Shadow Owner" = {
+        scope = "/subscriptions/00000000-0000-0000-0000-000000000000"
+        permissions = {
+          actions = ["*"]
+        }
+      }
+    }
+  }
+
+  expect_failures = [check.custom_roles_avoid_wildcard_actions]
+}

@@ -26,10 +26,11 @@ privileged roles.
 
 ## Overview
 
-Role assignments keyed by a logical label you choose. Each entry is expanded over the cartesian
-product of its `principal_ids` and its `role_names` + `role_ids`, so one entry can grant several roles
-to several principals at one scope. The module does three things a bare `azurerm_role_assignment`
-cannot:
+Role assignments keyed by a logical label you choose, plus **custom Azure RBAC role definitions**
+keyed by role name. Each assignment entry is expanded over the cartesian product of its
+`principal_ids` and its `role_names` + `role_ids` + `role_definition_keys`, so one entry can grant
+several roles to several principals at one scope. The module does four things a bare
+`azurerm_role_assignment` cannot:
 
 - **Secure-by-default delegation guard.** When an assignment grants a privileged role (Owner, User
   Access Administrator, or Role Based Access Control Administrator), the module attaches a Microsoft
@@ -45,6 +46,12 @@ cannot:
 - **Stable, plan-known keys.** Instance keys are index based (`label|rN|pN`), so assigning a role to a
   freshly created identity (a computed `principal_id`) never trips the "for_each argument must be known"
   error, and reordering inputs never churns unrelated assignments.
+- **Define-then-assign custom roles.** `role_definitions` creates custom role definitions
+  (actions/not_actions/data_actions, `assignable_scopes` defaulting to the definition's own scope) at
+  a management group, subscription, or resource group, and assignments (permanent or PIM) reference
+  them by key through `role_definition_keys` in the same call. Creating a definition needs
+  `roleDefinitions/write` on the scope (Owner; User Access Administrator is not enough), and a check
+  block flags wildcard-`*` custom roles (Owner-equivalents in disguise).
 
 Assignments carry no tags and are global to their scope, so there is no `resource_group_id`, `location`,
 or `tags` input. Pairs naturally with the `user-assigned-identity`, `keyvault`, and `storage-account`

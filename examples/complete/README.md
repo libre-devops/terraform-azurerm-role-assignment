@@ -34,6 +34,10 @@ locals {
   rg_name  = "rg-${var.short}-${var.loc}-${terraform.workspace}-002"
   uai_name = "id-${var.short}-${var.loc}-${terraform.workspace}-002"
 
+  # Custom role names are unique per tenant, so the name carries the example's identity to keep
+  # repeat runs and other stacks from colliding.
+  custom_role_name = "Tag Reader (${var.short}-${var.loc}-${terraform.workspace}-cmp)"
+
   # The permanent (standard azurerm_role_assignment) surface. Always applied.
   permanent_assignments = {
     # Cartesian expansion: Reader to both the running principal and the (computed) identity.
@@ -70,6 +74,14 @@ locals {
       scope         = module.rg.ids[local.rg_name]
       principal_ids = [data.azurerm_client_config.current.object_id]
       role_ids      = [data.azurerm_role_definition.monitoring_reader.id]
+    }
+
+    # Define-then-assign: the custom role created by role_definitions below, referenced by key and
+    # assigned at the resource group (inside the definition's subscription assignable scope).
+    custom_role_holder = {
+      scope                = module.rg.ids[local.rg_name]
+      principal_ids        = [data.azurerm_client_config.current.object_id]
+      role_definition_keys = [local.custom_role_name]
     }
   }
 
@@ -141,6 +153,18 @@ data "azurerm_role_definition" "monitoring_reader" {
 # P2. See the PIM entries in local.pim_assignments for the eligible and active usage.
 module "role_assignment" {
   source = "../../"
+
+  # A minimal custom role (read resource groups) defined at the subscription and assigned by key in
+  # local.permanent_assignments. Creating it needs roleDefinitions/write on the subscription (Owner).
+  role_definitions = {
+    (local.custom_role_name) = {
+      scope       = "/subscriptions/${data.azurerm_client_config.current.subscription_id}"
+      description = "Reads resource groups; a minimal custom role demonstrating define-then-assign."
+      permissions = {
+        actions = ["Microsoft.Resources/subscriptions/resourceGroups/read"]
+      }
+    }
+  }
 
   role_assignments = merge(
     local.permanent_assignments,
