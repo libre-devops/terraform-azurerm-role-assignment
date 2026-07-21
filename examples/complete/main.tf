@@ -128,9 +128,14 @@ module "role_assignment" {
   role_definitions = {
     (local.custom_role_name) = {
       scope       = "/subscriptions/${data.azurerm_client_config.current.subscription_id}"
-      description = "Reads resource groups; a minimal custom role demonstrating define-then-assign."
+      description = "Reads resource groups and tags; a minimal custom role demonstrating define-then-assign."
       permissions = {
-        actions = ["Microsoft.Resources/subscriptions/resourceGroups/read"]
+        # Control-plane reads only: the resource group itself and the standalone Tags API (RG reads
+        # already return tags in the body; tags/read covers the dedicated tags endpoints too).
+        actions = [
+          "Microsoft.Resources/subscriptions/resourceGroups/read",
+          "Microsoft.Resources/tags/read",
+        ]
       }
     }
   }
